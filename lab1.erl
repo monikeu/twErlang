@@ -12,51 +12,6 @@
 %% API
 -export([startProg/0, prod/6, cons/6, bufferFun/4, getAmountElems/3]).
 
-%%start() ->
-%%%%  C = spawn(?MODULE, procC, []),
-%%  C = spawn(?MODULE, procC1(a), []),
-%%
-%%  register(procCC, C),
-%%
-%%  spawn(?MODULE, procB, []),
-%%  spawn(?MODULE, procA, []).
-%%
-%%procA() ->
-%%  procCC ! aaa,
-%%  procA().
-%%
-%%procB() ->
-%%  procCC ! bbb,
-%%  procA().
-%%
-%%procC() ->
-%%  receive
-%%    aaa ->
-%%      io:format("Proc: Received message from A~n"),
-%%      procC();
-%%    bbb ->
-%%      io:format("Proc: Received message from A~n"),
-%%      procC()
-%%  end.
-%%
-%%procC1(Value) ->
-%%  case Value of
-%%    a ->
-%%      receive
-%%        aaa ->
-%%          io:format("Proc: Received message from A~n"),
-%%          procC1(b)
-%%      end;
-%%    b ->
-%%      receive
-%%        bbb ->
-%%          io:format("Proc: Received message from A~n"),
-%%          procC1(a)
-%%      end
-%%  end.
-
-%% zarejestrowac bufor
-
 startProg() ->
   Buff = spawn(fun() -> bufferFun(lists:seq(1, 10), [], 10, 0) end),
 %%  register(buffer, Buff),

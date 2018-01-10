@@ -4,92 +4,117 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 10. sty 2018 02:26
+%%% Created : 03. sty 2018 08:16
 %%%-------------------------------------------------------------------
 -module(zad2).
 -author("monikeu").
 
 %% API
--export([]).
+-export([startProg/0, prod/7, cons/7, bufferFun/4, getAmountElems/3, runBufferProceses/2]).
 
-prod(N, State, Waiting, Resources, Left, Buff) ->
+startProg() ->
+  BufferPids = runBufferProceses(10, []),
+  Buff = spawn(fun() -> bufferFun(BufferPids, [], 10, 0) end),
+  spawn(fun() -> cons(2, start, 0, [], 0, Buff,[]) end),
+  spawn(fun() -> prod(2, start, 0, [], 0, Buff,[]) end),
+  spawn(fun() -> prod(5, start, 0, [], 0, Buff,[]) end),
+  spawn(fun() -> cons(5, start, 0, [], 0, Buff,[]) end).
+
+
+runBufferProceses(N, Processes) ->
+  case N of
+    0 -> Processes;
+    N ->
+      Pid = spawn(fun() -> bufferElem(state) end),
+      runBufferProceses(N-1, Processes ++ [Pid])
+  end.
+
+
+prod(N, State, Waiting, Resources, Left, Buff, LeftToProduce) ->
+  timer:sleep(500),
   case State of
     start ->
       Buff ! {self(), N, producer},
-      prod(N, await, 0, [], Left, Buff);
+      prod(N, await, 0, [], Left, Buff, []);
     await ->
       receive
         {List, message} ->
-          io:format("Producer: Received N elems from Buffer~n"),
-          prod(N, produce, Waiting, List, N, Buff);
+          io:format("Producer: Received ~s elems from Buffer~n", [integer_to_list(N)]),
+          prod(N, produce, Waiting, List, N, Buff,List);
         _ ->
-          prod(N, await, Waiting + 1, [], 0, Buff)
+          prod(N, await, Waiting + 1, [], 0, Buff,[])
       end;
     produce ->
       case Left of
         0 ->
           Buff ! {N, Resources, full, flag},
-          io:format("Producer: Produced N elems, sending to buffer~n"),
-          prod(N, start, 0, [], 0, Buff);
+          io:format("Producer: Produced ~s elems, sending to buffer~n", [integer_to_list(N)]),
+          prod(N, start, 0, [], 0, Buff,[]);
         _ ->
-          io:format("Producer: dooopaaa~n"),
-          prod(N, produce, Waiting, Resources, Left - 1, Buff)
+          [OnePid | Rest] = LeftToProduce,
+          OnePid ! {bufferElemFull, self()},
+          prod(N, produce, Waiting, Resources, Left - 1, Buff, Rest)
       end
   end.
 
-cons(N, State, Waiting, Resources, Left, Buff, Help) ->
+cons(N, State, Waiting, Resources, Left, Buff, LeftToConsume) ->
+  timer:sleep(500),
   case State of
     start ->
-      Buff ! {consumer,  N, self()},
-      cons(N, await, 0, [], 0, Buff);
+      Buff ! {self(), N, consumer},
+      cons(N, await, 0, [], 0, Buff,[]);
     await ->
       receive
-        {elemsforProducer, List} ->
-          io:format("Consumer: Received N elems from Buffer ~n"),
-          cons(N, consume, Waiting, List, N, Buff);
+        {List, message} ->
+          io:format("Consumer: Received ~s elems from Buffer ~n", [integer_to_list(N)]),
+          cons(N, consume, Waiting, List, N, Buff,List);
         _ ->
-          cons(N, await, Waiting + 1, [], 0, Buff)
+          cons(N, await, Waiting + 1, [], 0, Buff, [])
       end;
     consume ->
       case Left of
         0 ->
           Buff ! {N, Resources, free, flag},
-          io:format("Consumer: consumed N elems, sending to buffer~n"),
-          cons(N, start, 0, [], 0, Buff);
+          io:format("Consumer: consumed ~s elems, sending to buffer~n", [integer_to_list(N)]),
+          cons(N, start, 0, [], 0, Buff, []);
         _ ->
-          cons(N, consume, Waiting, Resources, Left - 1, Buff)
+          [OnePid | Rest] = LeftToConsume,
+          OnePid !{bufferElemFree, self()},
+          cons(N, consume, Waiting, Resources, Left - 1, Buff, Rest)
       end
   end.
 
-
-freeQ(Free, FreeCount) ->
-
+bufferFun(FreeList, FullList, Free, Full) ->
   receive
-    {buff, free, BuffElPid} ->
-      freeQ(Free ++ [BuffElPid], FreeCount + 1);
+    {Pid, Amount, producer} when Amount =< Free ->
+      io:format("Buffer: producer gets elems~n"),
+      ToSend = getAmountElems(Amount, FreeList, []),
+      Pid ! {ToSend, message},
+      bufferFun(FreeList--ToSend, FullList, Free - Amount, Full);
 
-    {producent, N, ProdPid} when N =< FreeCount ->
-      ToSend = getAmountElems(N, Free, []),
-      ProdPid ! {elemsforProducer, ToSend},
-      freeQ(Free -- ToSend, FreeCount-N)
+    {Pid, Amount, consumer} when Amount =< Full ->
+      io:format("Buffer: consumer gets elems~n"),
+      ToSend = getAmountElems(Amount, FullList, []),
+      Pid ! {ToSend, message},
+      bufferFun(FreeList, FullList--ToSend, Free, Full - Amount);
+
+    {Amount, Resources, free, flag} ->
+      io:format("Buffer: got free~n"),
+      bufferFun(FreeList ++ Resources, FullList, Free + Amount, Full);
+
+    {Amount, Resources, full, flag} ->
+      io:format("Buffer: got full~n"),
+      bufferFun(FreeList, FullList ++ Resources, Free, Full + Amount)
   end.
 
-fullQ(Full, FullCount) ->
-  receive
-    {buff, full, BuffElPid} ->
-      fullQ(Full ++ [BuffElPid], FullCount + 1);
-    {consument, N, ConsPid} when N =< FullCount ->
-      ToSend =  getAmountElems(N, Full, []),
-      ConsPid ! {elemsForConsumer, ToSend},
-      fullQ(Full -- ToSend, FullCount - N)
-  end.
-
-buffEl(FullQ, FreeQ, State) ->
+bufferElem(State) ->
   receive
     {bufferElemFull, Pid} ->
-      io:format("Buffer: filled by producer ~s ~n", integer_to_list(Pid));
+      io:format("Buffer: filled by producer ~p ~n", [Pid]),
+      bufferElem(State);
     {bufferElemFree, Pid} ->
-      io:format("Buffer: got free by consumer ~s ~n", integer_to_list(Pid))
+      io:format("Buffer: got free by consumer ~p ~n", [Pid]),
+      bufferElem(State)
   end.
 
 getAmountElems(Amount, FullList, Returned) ->
@@ -99,4 +124,6 @@ getAmountElems(Amount, FullList, Returned) ->
       A = [X],
       getAmountElems(Amount - 1, Tail, Returned ++ A)
   end.
+
+
 
