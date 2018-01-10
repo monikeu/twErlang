@@ -60,106 +60,92 @@
 startProg() ->
   Buff = spawn(fun() -> bufferFun(lists:seq(1, 10), [], 10, 0) end),
 %%  register(buffer, Buff),
-  spawn(fun() -> cons(2, start, 0,[],0,Buff) end),
-  spawn(fun() -> prod(2, start, 0,[],0, Buff) end),
-  spawn(fun() -> prod(5, start, 0,[],0, Buff) end),
-  spawn(fun() -> cons(5, start, 0,[],0,Buff) end).
+  spawn(fun() -> cons(2, start, 0, [], 0, Buff) end),
+  spawn(fun() -> prod(2, start, 0, [], 0, Buff) end),
+  spawn(fun() -> prod(5, start, 0, [], 0, Buff) end),
+  spawn(fun() -> cons(5, start, 0, [], 0, Buff) end).
 
-prod(N, State, Waiting, Resources, Left,Buff) ->
+prod(N, State, Waiting, Resources, Left, Buff) ->
+  timer:sleep(500),
   case State of
     start ->
       Buff ! {self(), N, producer},
-      prod(N, await, 0, [], Left,Buff);
+      prod(N, await, 0, [], Left, Buff);
     await ->
       receive
         {List, message} ->
-          io:format("Producer: Received N elems from Buffer~n"),
-          prod(N, produce, Waiting, List, N,Buff);
+          io:format("Producer: Received ~s elems from Buffer~n", [integer_to_list(N)]),
+          prod(N, produce, Waiting, List, N, Buff);
         _ ->
-          prod(N, await, Waiting + 1, [], 0,Buff)
+          prod(N, await, Waiting + 1, [], 0, Buff)
       end;
     produce ->
       case Left of
         0 ->
           Buff ! {N, Resources, full, flag},
-          io:format("Producer: Produced N elems, sending to buffer~n"),
-          prod(N, start, 0, [], 0,Buff);
+          io:format("Producer: Produced ~s elems, sending to buffer~n", [integer_to_list(N)]),
+          prod(N, start, 0, [], 0, Buff);
         _ ->
-          io:format("Producer: dooopaaa~n"),
-          prod(N, produce, Waiting, Resources, Left - 1,Buff)
+          prod(N, produce, Waiting, Resources, Left - 1, Buff)
       end
   end.
 
-cons(N, State, Waiting, Resources, Left,Buff) ->
+cons(N, State, Waiting, Resources, Left, Buff) ->
+  timer:sleep(500),
   case State of
     start ->
       Buff ! {self(), N, consumer},
-      cons(N, await, 0, [], 0,Buff);
+      cons(N, await, 0, [], 0, Buff);
     await ->
       receive
-        {List,message} ->
-          io:format("Consumer: Received N elems from Buffer ~n"),
-          cons(N, consume, Waiting, List, N,Buff);
+        {List, message} ->
+          io:format("Consumer: Received ~s elems from Buffer ~n", [integer_to_list(N)]),
+          cons(N, consume, Waiting, List, N, Buff);
         _ ->
-          cons(N, await, Waiting + 1, [], 0,Buff)
+          cons(N, await, Waiting + 1, [], 0, Buff)
       end;
     consume ->
       case Left of
         0 ->
           Buff ! {N, Resources, free, flag},
-          io:format("Consumer: consumed N elems, sending to buffer~n"),
-          cons(N, start, 0, [], 0,Buff);
+          io:format("Consumer: consumed ~s elems, sending to buffer~n", [integer_to_list(N)]),
+          cons(N, start, 0, [], 0, Buff);
         _ ->
-          cons(N, consume, Waiting, Resources, Left - 1,Buff)
+          cons(N, consume, Waiting, Resources, Left - 1, Buff)
       end
   end.
 
 bufferFun(FreeList, FullList, Free, Full) ->
   receive
-    {Pid, Amount, Who} ->
-      case Who of
-        producer ->
-          case Amount > Free of
-%%            true -> _;
-            false ->
-              io:format("Buffer: producer gets elems~n"),
-              ToSend = getAmountElems(Amount, FreeList, []),
-              Pid ! {ToSend, message},
-              bufferFun( FreeList--ToSend, FullList, Free - Amount, Full);
-            _ ->
-              self() !  {Pid, Amount, Who},
-              bufferFun(FreeList, FullList, Free, Full)
-          end;
-        consumer ->
-          case Amount > Full of
-%%            true -> _;
-            false ->
-              io:format("Buffer: consumer gets elems~n"),
-              ToSend = getAmountElems(Amount, FullList, []),
-              Pid ! {ToSend, message},
-              bufferFun(FreeList, FullList--ToSend, Free, Full-Amount);
-            _ ->
-              self() ! {Pid, Amount, Who},
-              bufferFun(FreeList, FullList, Free, Full)
-          end
-      end;
-    {Amount, Resources, Type, flag} ->
-      case Type of
-        free ->
-          io:format("Buffer: got free~n"),
-          bufferFun(FreeList++Resources, FullList, Free+Amount, Full);
-        full ->
-          io:format("Buffer: got full~n"),
-          bufferFun( FreeList, FullList++Resources, Free, Full+Amount)
-      end
+    {Pid, Amount, producer} when Amount =< Free ->
+      io:format("Buffer: producer gets elems~n"),
+      ToSend = getAmountElems(Amount, FreeList, []),
+      Pid ! {ToSend, message},
+      bufferFun(FreeList--ToSend, FullList, Free - Amount, Full);
+
+    {Pid, Amount, consumer} when Amount =< Full ->
+      io:format("Buffer: consumer gets elems~n"),
+      ToSend = getAmountElems(Amount, FullList, []),
+      Pid ! {ToSend, message},
+      bufferFun(FreeList, FullList--ToSend, Free, Full - Amount);
+
+    {Amount, Resources, free, flag} ->
+      io:format("Buffer: got free~n"),
+      bufferFun(FreeList ++ Resources, FullList, Free + Amount, Full);
+
+    {Amount, Resources, full, flag} ->
+      io:format("Buffer: got full~n"),
+      bufferFun(FreeList, FullList ++ Resources, Free, Full + Amount)
   end.
+
+
 
 getAmountElems(Amount, FullList, Returned) ->
   case Amount of
     0 -> Returned;
-    N -> [X| Tail] = FullList,
+    N -> [X | Tail] = FullList,
       A = [X],
-      getAmountElems(Amount-1, Tail, Returned ++ A)
+      getAmountElems(Amount - 1, Tail, Returned ++ A)
   end.
 
 
